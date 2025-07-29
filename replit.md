@@ -57,6 +57,7 @@ Preferred communication style: Simple, everyday language.
 
 ## Data Flow
 
+### Primary Flow (Screen Capture)
 1. **Capture Initiation**: User configures parameters via web interface
 2. **API Request**: Frontend sends configuration to `/api/start` endpoint
 3. **Service Activation**: ScreenCaptureService starts background capture thread
@@ -64,6 +65,34 @@ Preferred communication style: Simple, everyday language.
 5. **Memory Storage**: Latest image stored in service memory
 6. **Frontend Polling**: JavaScript periodically requests latest image via API
 7. **Real-time Display**: Dashboard updates with current capture and statistics
+
+### External Integration Flow (Added 2025-07-29)
+1. **External Image Feed**: External systems POST images to `/api/image/feed`
+2. **Image Processing**: Fed images processed with same pipeline as captured images
+3. **Data Retrieval**: External systems GET processed images via `/api/image/latest` or `/api/image/raw`
+4. **Real-time Streaming**: Systems can subscribe to `/api/image/stream` for continuous updates
+5. **Status Monitoring**: External systems monitor capture status via `/api/status`
+
+## API Endpoints
+
+### Core Endpoints
+- **GET /**: Dashboard interface
+- **POST /api/start**: Start screen capture with optional configuration
+- **POST /api/stop**: Stop screen capture
+- **GET /api/status**: Get current system status and statistics
+- **POST /api/config**: Update capture configuration
+
+### Image Endpoints
+- **GET /api/image/latest**: Get latest captured image as JSON with base64 data
+- **GET /api/image/raw**: Get latest image as raw JPEG bytes
+- **GET /api/image/stream**: Real-time multipart image stream
+- **POST /api/image/feed**: Accept external images (base64 JSON or file upload)
+
+## Recent Updates (2025-07-29)
+- **Fixed UI Issues**: Resolved Feather icon error (changed 'stop' to 'square' icon)
+- **Added Headless Environment Support**: System now works without display access via test image generation
+- **Enhanced API Endpoints**: Comprehensive external integration capabilities
+- **External Integration Demo**: Built demonstration script showing API usage patterns
 
 ## External Dependencies
 

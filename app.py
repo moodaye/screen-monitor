@@ -5,6 +5,7 @@ import time
 import base64
 from io import BytesIO
 from flask import Flask, render_template, jsonify, request, Response
+from PIL import Image
 from screen_capture import ScreenCaptureService
 from config import Config
 
@@ -144,6 +145,103 @@ def image_stream():
     
     return Response(generate(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/api/image/feed', methods=['POST'])
+def feed_image():
+    """Accept external image data to feed into the system"""
+    try:
+        # Check if image is provided as base64 in JSON
+        if request.is_json:
+            data = request.get_json()
+            if 'image' in data:
+                # Decode base64 image
+                image_data = data['image']
+                if image_data.startswith('data:image'):
+                    # Remove data URL prefix
+                    image_data = image_data.split(',', 1)[1]
+                
+                # Decode base64
+                import base64
+                image_bytes = base64.b64decode(image_data)
+                image = Image.open(BytesIO(image_bytes))
+                
+                # Process and store the image
+                processed_image = capture_service._process_image(image)
+                capture_service._latest_image = processed_image
+                capture_service._last_capture_time = time.time()
+                
+                logger.info(f"External image fed successfully: {processed_image.size}")
+                return jsonify({
+                    'success': True,
+                    'message': 'Image fed successfully',
+                    'size': processed_image.size
+                })
+        
+        # Check if image is provided as file upload
+        elif 'image' in request.files:
+            file = request.files['image']
+            if file and file.filename:
+                # Open uploaded image
+                image = Image.open(file.stream)
+                
+                # Process and store the image
+                processed_image = capture_service._process_image(image)
+                capture_service._latest_image = processed_image
+                capture_service._last_capture_time = time.time()
+                
+                logger.info(f"External image file fed successfully: {processed_image.size}")
+                return jsonify({
+                    'success': True,
+                    'message': 'Image file fed successfully',
+                    'size': processed_image.size
+                })
+        
+        return jsonify({
+            'success': False,
+            'message': 'No valid image data provided'
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Error feeding image: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error feeding image: {str(e)}'
+        }), 500
+
+@app.route('/api/image/raw')
+def get_raw_image():
+    """Get the latest captured image as raw JPEG bytes"""
+    try:
+        image_data = capture_service.get_latest_image()
+        
+        if image_data is None:
+            return jsonify({
+                'success': False,
+                'message': 'No image available'
+            }), 404
+        
+        # Convert PIL Image to JPEG bytes
+        buffer = BytesIO()
+        image_data.save(buffer, format='JPEG', quality=capture_service.get_config().get('quality', 85))
+        buffer.seek(0)
+        
+        return Response(
+            buffer.getvalue(),
+            mimetype='image/jpeg',
+            headers={
+                'Content-Disposition': f'inline; filename=screenshot_{int(time.time())}.jpg',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting raw image: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error getting image: {str(e)}'
+        }), 500
 
 @app.route('/api/config', methods=['GET', 'POST'])
 def handle_config():

@@ -12,4 +12,5 @@ dependencies = [
     "pillow>=11.3.0",
     "psycopg2-binary>=2.9.10",
     "pyautogui>=0.9.54",
+    "requests>=2.32.4",
 ]
