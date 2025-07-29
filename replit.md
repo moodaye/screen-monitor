@@ -88,11 +88,20 @@ Preferred communication style: Simple, everyday language.
 - **GET /api/image/stream**: Real-time multipart image stream
 - **POST /api/image/feed**: Accept external images (base64 JSON or file upload)
 
+### Outbound Webhook Integration (Added 2025-07-29)
+1. **Webhook Configuration**: External systems configured via `/api/webhooks` endpoints
+2. **Automatic Image Sending**: Captured images automatically sent to all configured webhook URLs
+3. **Format Support**: Both base64 JSON and multipart form data formats supported
+4. **Real-time Integration**: Images sent immediately after capture with configurable intervals
+5. **Dashboard Controls**: Complete webhook management via web interface
+
 ## Recent Updates (2025-07-29)
-- **Fixed UI Issues**: Resolved Feather icon error (changed 'stop' to 'square' icon)
-- **Added Headless Environment Support**: System now works without display access via test image generation
-- **Enhanced API Endpoints**: Comprehensive external integration capabilities
-- **External Integration Demo**: Built demonstration script showing API usage patterns
+- **Added Outbound Webhook System**: Screen captures now automatically sent to external systems
+- **Built Webhook Management API**: Complete CRUD operations for webhook URL configuration
+- **Created Dashboard Integration Controls**: UI for managing external sending and webhook URLs
+- **Added Format Support**: Both base64 JSON and multipart form data transmission
+- **Built Demo Scripts**: Complete examples showing external system integration
+- **Prepared GitHub Repository**: Full project structure ready for repository creation
 
 ## External Dependencies
 
