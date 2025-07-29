@@ -4,6 +4,9 @@ import logging
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import os
+import requests
+import base64
+from io import BytesIO
 
 # Screen capture library selection
 try:
@@ -35,7 +38,10 @@ class ScreenCaptureService:
             'quality': 85,    # JPEG quality
             'resize_factor': 1.0,  # scale factor for resizing
             'add_timestamp': True,  # add timestamp to image
-            'monitor': 0      # monitor index for multi-monitor setups
+            'monitor': 0,      # monitor index for multi-monitor setups
+            'webhook_urls': [],  # URLs to send captured images to
+            'send_to_external': False,  # enable/disable external sending
+            'external_format': 'base64'  # 'base64' or 'multipart'
         }
         
         # Check if screen capture is available
@@ -193,6 +199,10 @@ class ScreenCaptureService:
                     self._stats['total_captures'] += 1
                     
                     logger.debug(f"Captured image: {processed_image.size}")
+                    
+                    # Send to external systems if configured
+                    if self._config.get('send_to_external', False):
+                        self._send_to_external_systems(processed_image)
                 else:
                     self._stats['failed_captures'] += 1
                     logger.warning("Failed to capture screenshot")
@@ -350,3 +360,105 @@ class ScreenCaptureService:
         except Exception as e:
             logger.error(f"Failed to add timestamp: {str(e)}")
             return image  # Return original if timestamp addition fails
+    
+    def _send_to_external_systems(self, image):
+        """Send captured image to configured external systems"""
+        if not self._config.get('webhook_urls'):
+            return
+            
+        def send_async():
+            for url in self._config.get('webhook_urls', []):
+                try:
+                    self._send_image_to_url(image, url)
+                except Exception as e:
+                    logger.error(f"Failed to send image to {url}: {str(e)}")
+        
+        # Send in background thread to avoid blocking capture
+        threading.Thread(target=send_async, daemon=True).start()
+    
+    def _send_image_to_url(self, image, url):
+        """Send image to a specific URL"""
+        format_type = self._config.get('external_format', 'base64')
+        
+        if format_type == 'base64':
+            # Send as JSON with base64 encoded image
+            buffer = BytesIO()
+            image.save(buffer, format='JPEG', quality=self._config.get('quality', 85))
+            img_str = base64.b64encode(buffer.getvalue()).decode()
+            
+            payload = {
+                'timestamp': self._last_capture_time,
+                'image': f'data:image/jpeg;base64,{img_str}',
+                'size': image.size,
+                'source': 'screen_monitor',
+                'quality': self._config.get('quality', 85)
+            }
+            
+            response = requests.post(
+                url, 
+                json=payload,
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            response.raise_for_status()
+            logger.info(f"Successfully sent image to {url} (base64)")
+            
+        elif format_type == 'multipart':
+            # Send as multipart form data
+            buffer = BytesIO()
+            image.save(buffer, format='JPEG', quality=self._config.get('quality', 85))
+            buffer.seek(0)
+            
+            files = {
+                'image': ('screenshot.jpg', buffer, 'image/jpeg')
+            }
+            data = {
+                'timestamp': self._last_capture_time,
+                'size': f"{image.size[0]}x{image.size[1]}",
+                'source': 'screen_monitor',
+                'quality': str(self._config.get('quality', 85))
+            }
+            
+            response = requests.post(
+                url,
+                files=files,
+                data=data,
+                timeout=10
+            )
+            response.raise_for_status()
+            logger.info(f"Successfully sent image to {url} (multipart)")
+    
+    def add_webhook_url(self, url):
+        """Add a webhook URL for sending images"""
+        if url not in self._config.get('webhook_urls', []):
+            if 'webhook_urls' not in self._config:
+                self._config['webhook_urls'] = []
+            self._config['webhook_urls'].append(url)
+            logger.info(f"Added webhook URL: {url}")
+            return True
+        return False
+    
+    def remove_webhook_url(self, url):
+        """Remove a webhook URL"""
+        if url in self._config.get('webhook_urls', []):
+            self._config['webhook_urls'].remove(url)
+            logger.info(f"Removed webhook URL: {url}")
+            return True
+        return False
+    
+    def get_webhook_urls(self):
+        """Get list of configured webhook URLs"""
+        return self._config.get('webhook_urls', [])
+    
+    def enable_external_sending(self, enabled=True):
+        """Enable or disable sending to external systems"""
+        self._config['send_to_external'] = enabled
+        logger.info(f"External sending {'enabled' if enabled else 'disabled'}")
+    
+    def set_external_format(self, format_type):
+        """Set the format for external sending ('base64' or 'multipart')"""
+        if format_type in ['base64', 'multipart']:
+            self._config['external_format'] = format_type
+            logger.info(f"External format set to: {format_type}")
+            return True
+        return False

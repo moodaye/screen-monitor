@@ -6,6 +6,7 @@ class ScreenMonitor {
         
         this.initializeEventListeners();
         this.updateStatus();
+        this.loadWebhooks();
         this.startStatusUpdates();
     }
     
@@ -15,6 +16,12 @@ class ScreenMonitor {
         document.getElementById('stop-btn').addEventListener('click', () => this.stopCapture());
         document.getElementById('update-config-btn').addEventListener('click', () => this.updateConfig());
         document.getElementById('refresh-image-btn').addEventListener('click', () => this.refreshImage());
+        
+        // Webhook management
+        document.getElementById('add-webhook-btn').addEventListener('click', () => this.addWebhook());
+        document.getElementById('test-webhook-btn').addEventListener('click', () => this.testWebhook());
+        document.getElementById('enable-external').addEventListener('change', () => this.toggleExternalSending());
+        document.getElementById('external-format').addEventListener('change', () => this.updateExternalFormat());
         
         // Form validation
         const form = document.getElementById('control-form');
@@ -284,6 +291,206 @@ class ScreenMonitor {
         const secs = Math.floor(seconds % 60);
         
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    async loadWebhooks() {
+        try {
+            const response = await fetch('/api/webhooks');
+            const result = await response.json();
+            
+            if (result.success) {
+                this.displayWebhooks(result.webhooks);
+                document.getElementById('enable-external').checked = result.external_sending_enabled;
+                document.getElementById('external-format').value = result.external_format;
+                this.updateWebhookStatus(result.external_sending_enabled);
+            }
+        } catch (error) {
+            console.error('Error loading webhooks:', error);
+        }
+    }
+    
+    displayWebhooks(webhooks) {
+        const container = document.getElementById('webhook-list');
+        const noWebhooksMsg = document.getElementById('no-webhooks-msg');
+        
+        if (webhooks.length === 0) {
+            noWebhooksMsg.style.display = 'block';
+            return;
+        }
+        
+        noWebhooksMsg.style.display = 'none';
+        
+        // Clear existing webhooks except the no-webhooks message
+        Array.from(container.children).forEach(child => {
+            if (child.id !== 'no-webhooks-msg') {
+                child.remove();
+            }
+        });
+        
+        webhooks.forEach(url => {
+            const webhookDiv = document.createElement('div');
+            webhookDiv.className = 'webhook-item d-flex justify-content-between align-items-center mb-2 p-2 bg-body rounded';
+            webhookDiv.innerHTML = `
+                <span class="text-truncate me-2">${url}</span>
+                <button class="btn btn-sm btn-outline-danger remove-webhook-btn" data-url="${url}">
+                    <i data-feather="trash-2" style="width: 14px; height: 14px;"></i>
+                </button>
+            `;
+            
+            container.appendChild(webhookDiv);
+            
+            // Add remove event listener
+            const removeBtn = webhookDiv.querySelector('.remove-webhook-btn');
+            removeBtn.addEventListener('click', () => this.removeWebhook(url));
+        });
+        
+        // Re-render feather icons
+        feather.replace();
+    }
+    
+    async addWebhook() {
+        const urlInput = document.getElementById('webhook-url');
+        const url = urlInput.value.trim();
+        
+        if (!url) {
+            this.showMessage('Please enter a webhook URL', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/webhooks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ add_url: url })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showMessage(result.message, 'success');
+                urlInput.value = '';
+                this.displayWebhooks(result.webhooks);
+            } else {
+                this.showMessage(result.message, 'danger');
+            }
+        } catch (error) {
+            this.showMessage(`Error adding webhook: ${error.message}`, 'danger');
+        }
+    }
+    
+    async removeWebhook(url) {
+        try {
+            const response = await fetch('/api/webhooks', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ remove_url: url })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showMessage(result.message, 'info');
+                this.displayWebhooks(result.webhooks);
+            } else {
+                this.showMessage(result.message, 'danger');
+            }
+        } catch (error) {
+            this.showMessage(`Error removing webhook: ${error.message}`, 'danger');
+        }
+    }
+    
+    async testWebhook() {
+        const urlInput = document.getElementById('webhook-url');
+        const url = urlInput.value.trim();
+        
+        if (!url) {
+            this.showMessage('Please enter a webhook URL to test', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/test-webhook', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ url: url })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showMessage(result.message, 'success');
+            } else {
+                this.showMessage(result.message, 'danger');
+            }
+        } catch (error) {
+            this.showMessage(`Error testing webhook: ${error.message}`, 'danger');
+        }
+    }
+    
+    async toggleExternalSending() {
+        const enabled = document.getElementById('enable-external').checked;
+        
+        try {
+            const response = await fetch('/api/webhooks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ enable_external: enabled })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showMessage(result.message, 'success');
+                this.updateWebhookStatus(enabled);
+            } else {
+                this.showMessage(result.message, 'danger');
+            }
+        } catch (error) {
+            this.showMessage(`Error toggling external sending: ${error.message}`, 'danger');
+        }
+    }
+    
+    async updateExternalFormat() {
+        const format = document.getElementById('external-format').value;
+        
+        try {
+            const response = await fetch('/api/webhooks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ external_format: format })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showMessage(result.message, 'success');
+            } else {
+                this.showMessage(result.message, 'danger');
+            }
+        } catch (error) {
+            this.showMessage(`Error updating format: ${error.message}`, 'danger');
+        }
+    }
+    
+    updateWebhookStatus(enabled) {
+        const statusElement = document.getElementById('webhook-status');
+        if (enabled) {
+            statusElement.textContent = 'Active';
+            statusElement.className = 'fw-bold text-success';
+        } else {
+            statusElement.textContent = 'Disabled';
+            statusElement.className = 'fw-bold text-secondary';
+        }
     }
 }
 

@@ -96,7 +96,7 @@
                         </div>
                     </div>
                     
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2 flex-wrap">
                         <button type="button" id="start-btn" class="btn btn-success" 
                                 {% if is_capturing %}disabled{% endif %}>
                             <i data-feather="play" class="me-1"></i>
@@ -144,6 +144,73 @@
                 <div class="text-center">
                     <div class="text-muted">Uptime</div>
                     <div id="uptime" class="fw-bold">00:00:00</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- External Integration Panel -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i data-feather="send" class="me-2"></i>
+                    External Integration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label for="webhook-url" class="form-label">Webhook URL</label>
+                            <div class="input-group">
+                                <input type="url" class="form-control" id="webhook-url" 
+                                       placeholder="https://example.com/webhook">
+                                <button type="button" id="add-webhook-btn" class="btn btn-outline-primary">
+                                    <i data-feather="plus" class="me-1"></i>
+                                    Add
+                                </button>
+                                <button type="button" id="test-webhook-btn" class="btn btn-outline-secondary">
+                                    <i data-feather="zap" class="me-1"></i>
+                                    Test
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Configured Webhooks</label>
+                            <div id="webhook-list" class="border rounded p-2 bg-body-tertiary" style="min-height: 50px;">
+                                <div class="text-muted" id="no-webhooks-msg">No webhooks configured</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" class="form-check-input" id="enable-external" 
+                                       role="switch">
+                                <label class="form-check-label" for="enable-external">
+                                    Send to External Systems
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="external-format" class="form-label">Format</label>
+                            <select class="form-select" id="external-format">
+                                <option value="base64">JSON (Base64)</option>
+                                <option value="multipart">Multipart Form</option>
+                            </select>
+                        </div>
+                        
+                        <div class="text-center">
+                            <div class="text-muted small">Webhook Status</div>
+                            <div id="webhook-status" class="fw-bold text-secondary">Disabled</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

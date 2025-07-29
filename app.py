@@ -273,6 +273,147 @@ def handle_config():
                 'message': f'Error updating configuration: {str(e)}'
             }), 500
 
+@app.route('/api/webhooks', methods=['GET', 'POST', 'DELETE'])
+def manage_webhooks():
+    """Manage webhook URLs for sending images to external systems"""
+    if request.method == 'GET':
+        # Get all configured webhooks
+        return jsonify({
+            'success': True,
+            'webhooks': capture_service.get_webhook_urls(),
+            'external_sending_enabled': capture_service.get_config().get('send_to_external', False),
+            'external_format': capture_service.get_config().get('external_format', 'base64')
+        })
+    
+    elif request.method == 'POST':
+        # Add or configure webhooks
+        try:
+            data = request.get_json()
+            
+            if 'add_url' in data:
+                # Add a new webhook URL
+                url = data['add_url']
+                if capture_service.add_webhook_url(url):
+                    return jsonify({
+                        'success': True,
+                        'message': f'Webhook URL added: {url}',
+                        'webhooks': capture_service.get_webhook_urls()
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'URL already exists or invalid'
+                    }), 400
+            
+            elif 'enable_external' in data:
+                # Enable/disable external sending
+                enabled = bool(data['enable_external'])
+                capture_service.enable_external_sending(enabled)
+                return jsonify({
+                    'success': True,
+                    'message': f'External sending {"enabled" if enabled else "disabled"}',
+                    'external_sending_enabled': enabled
+                })
+            
+            elif 'external_format' in data:
+                # Set external format
+                format_type = data['external_format']
+                if capture_service.set_external_format(format_type):
+                    return jsonify({
+                        'success': True,
+                        'message': f'External format set to: {format_type}',
+                        'external_format': format_type
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid format. Use "base64" or "multipart"'
+                    }), 400
+            
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Missing required parameter'
+                }), 400
+                
+        except Exception as e:
+            logger.error(f"Error managing webhooks: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': f'Error: {str(e)}'
+            }), 500
+    
+    elif request.method == 'DELETE':
+        # Remove a webhook URL
+        try:
+            data = request.get_json()
+            if 'remove_url' in data:
+                url = data['remove_url']
+                if capture_service.remove_webhook_url(url):
+                    return jsonify({
+                        'success': True,
+                        'message': f'Webhook URL removed: {url}',
+                        'webhooks': capture_service.get_webhook_urls()
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'URL not found'
+                    }), 404
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Missing remove_url parameter'
+                }), 400
+                
+        except Exception as e:
+            logger.error(f"Error removing webhook: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': f'Error: {str(e)}'
+            }), 500
+
+@app.route('/api/test-webhook', methods=['POST'])
+def test_webhook():
+    """Test sending to a webhook URL without adding it to configuration"""
+    try:
+        data = request.get_json()
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({
+                'success': False,
+                'message': 'URL parameter required'
+            }), 400
+        
+        # Get latest image
+        image_data = capture_service.get_latest_image()
+        if image_data is None:
+            return jsonify({
+                'success': False,
+                'message': 'No image available to test with'
+            }), 404
+        
+        # Test sending
+        try:
+            capture_service._send_image_to_url(image_data, url)
+            return jsonify({
+                'success': True,
+                'message': f'Successfully sent test image to {url}'
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Failed to send to {url}: {str(e)}'
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error testing webhook: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'error': 'Endpoint not found'}), 404
