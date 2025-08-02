@@ -1,6 +1,7 @@
 import threading
 import time
 import logging
+import json
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import os
@@ -36,12 +37,15 @@ class ScreenCaptureService:
         self._config = {
             'interval': 1.0,  # seconds
             'quality': 85,    # JPEG quality
-            'resize_factor': 1.0,  # scale factor for resizing
+            'resize_factor': 0.5,  # scale factor for resizing (reduced from 1.0)
             'add_timestamp': True,  # add timestamp to image
             'monitor': 0,      # monitor index for multi-monitor setups
             'webhook_urls': [],  # URLs to send captured images to
             'send_to_external': False,  # enable/disable external sending
-            'external_format': 'base64'  # 'base64' or 'multipart'
+            'external_format': 'base64',  # 'base64' or 'multipart'
+            'webhook_quality': 60,  # Quality for webhook images (lower than display quality)
+            'webhook_max_width': 1280,  # Maximum width for webhook images
+            'webhook_max_height': 720   # Maximum height for webhook images
         }
         
         # Check if screen capture is available
@@ -84,6 +88,11 @@ class ScreenCaptureService:
             self._latest_image = processed_image
             self._last_capture_time = datetime.now().isoformat()
             self._stats['total_captures'] += 1
+            
+            # Send to external systems if configured
+            if self._config.get('send_to_external', False):
+                self._send_to_external_systems(processed_image)
+                
             return True
         except Exception as e:
             logger.error(f"Error feeding external image: {str(e)}")
@@ -221,9 +230,17 @@ class ScreenCaptureService:
         """Capture screenshot using available library"""
         try:
             if CAPTURE_LIBRARY == 'mss':
-                # Check if we're in a headless environment
+                # Check if we're in a headless environment (Linux/Mac only check)
                 import os
-                if not os.environ.get('DISPLAY') and not os.environ.get('WAYLAND_DISPLAY'):
+                import platform
+                is_headless = False
+                
+                # Only check for headless on non-Windows systems
+                if platform.system() != 'Windows':
+                    if not os.environ.get('DISPLAY') and not os.environ.get('WAYLAND_DISPLAY'):
+                        is_headless = True
+                
+                if is_headless:
                     # Create a simple test image for demonstration in headless environment
                     logger.warning("No display available - creating test image")
                     return self._create_test_image()
@@ -240,9 +257,17 @@ class ScreenCaptureService:
                     return image
 
             elif CAPTURE_LIBRARY == 'pyautogui':
-                # Check if we're in a headless environment
+                # Check if we're in a headless environment (Linux/Mac only check)
                 import os
-                if not os.environ.get('DISPLAY') and not os.environ.get('WAYLAND_DISPLAY'):
+                import platform
+                is_headless = False
+                
+                # Only check for headless on non-Windows systems
+                if platform.system() != 'Windows':
+                    if not os.environ.get('DISPLAY') and not os.environ.get('WAYLAND_DISPLAY'):
+                        is_headless = True
+                
+                if is_headless:
                     # Create a simple test image for demonstration in headless environment
                     logger.warning("No display available - creating test image")
                     return self._create_test_image()
@@ -361,17 +386,47 @@ class ScreenCaptureService:
             logger.error(f"Failed to add timestamp: {str(e)}")
             return image  # Return original if timestamp addition fails
     
+    def _optimize_image_for_webhook(self, image):
+        """Optimize image specifically for webhook transmission"""
+        max_width = self._config.get('webhook_max_width', 1280)
+        max_height = self._config.get('webhook_max_height', 720)
+        
+        # Calculate resize factor to fit within max dimensions
+        width_factor = max_width / image.width if image.width > max_width else 1.0
+        height_factor = max_height / image.height if image.height > max_height else 1.0
+        resize_factor = min(width_factor, height_factor)
+        
+        # Only resize if needed
+        if resize_factor < 1.0:
+            new_width = int(image.width * resize_factor)
+            new_height = int(image.height * resize_factor)
+            optimized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            logger.debug(f"Optimized image for webhook: {image.size} -> {optimized_image.size}")
+            return optimized_image
+        
+        return image
+    
     def _send_to_external_systems(self, image):
         """Send captured image to configured external systems"""
-        if not self._config.get('webhook_urls'):
+        webhook_urls = self._config.get('webhook_urls', [])
+        if not webhook_urls:
+            logger.debug("No webhook URLs configured - skipping external send")
             return
+        
+        logger.info(f"Sending image to {len(webhook_urls)} webhook(s)")
+        
+        # Optimize image for webhook transmission
+        optimized_image = self._optimize_image_for_webhook(image)
             
         def send_async():
-            for url in self._config.get('webhook_urls', []):
+            for url in webhook_urls:
                 try:
-                    self._send_image_to_url(image, url)
+                    logger.info(f"Attempting to send image to: {url}")
+                    self._send_image_to_url(optimized_image, url)
+                    logger.info(f"Successfully sent image to: {url}")
                 except Exception as e:
                     logger.error(f"Failed to send image to {url}: {str(e)}")
+                    self._last_error = f"Webhook send failed to {url}: {str(e)}"
         
         # Send in background thread to avoid blocking capture
         threading.Thread(target=send_async, daemon=True).start()
@@ -379,32 +434,85 @@ class ScreenCaptureService:
     def _send_image_to_url(self, image, url):
         """Send image to a specific URL"""
         format_type = self._config.get('external_format', 'base64')
+        logger.debug(f"Sending image to {url} in {format_type} format")
         
         if format_type == 'base64':
-            # Send as JSON with base64 encoded image
-            buffer = BytesIO()
-            image.save(buffer, format='JPEG', quality=self._config.get('quality', 85))
-            img_str = base64.b64encode(buffer.getvalue()).decode()
+            # Use webhook-specific quality setting
+            webhook_quality = self._config.get('webhook_quality', 60)
             
-            payload = {
-                'timestamp': self._last_capture_time,
-                'image': f'data:image/jpeg;base64,{img_str}',
-                'size': image.size,
-                'source': 'screen_monitor',
-                'quality': self._config.get('quality', 85)
-            }
+            # Try sending with progressively smaller sizes/quality if too large
+            max_attempts = 3
+            quality_levels = [webhook_quality, max(webhook_quality - 20, 30), max(webhook_quality - 40, 20)]
+            resize_factors = [1.0, 0.8, 0.6]
             
-            response = requests.post(
-                url, 
-                json=payload,
-                headers={'Content-Type': 'application/json'},
-                timeout=10
-            )
-            response.raise_for_status()
-            logger.info(f"Successfully sent image to {url} (base64)")
+            for attempt in range(max_attempts):
+                try:
+                    # Adjust image size and quality for this attempt
+                    current_quality = quality_levels[attempt]
+                    current_resize = resize_factors[attempt]
+                    
+                    # Resize image if needed for this attempt
+                    working_image = image
+                    if current_resize < 1.0:
+                        new_size = (
+                            int(image.width * current_resize),
+                            int(image.height * current_resize)
+                        )
+                        working_image = image.resize(new_size, Image.Resampling.LANCZOS)
+                        logger.debug(f"Attempt {attempt + 1}: Resized to {working_image.size}")
+                    
+                    # Send as JSON with base64 encoded image
+                    buffer = BytesIO()
+                    working_image.save(buffer, format='JPEG', quality=current_quality)
+                    img_str = base64.b64encode(buffer.getvalue()).decode()
+                    
+                    # Use the required payload format
+                    payload = {
+                        'image': img_str,  # Just the base64 string, no data URL prefix
+                        'format': 'jpeg',  # Image format
+                        'metadata': {
+                            'source': 'ScreenStream'
+                        }
+                    }
+                    
+                    payload_size = len(json.dumps(payload))
+                    logger.debug(f"Attempt {attempt + 1}: Payload size: {payload_size} bytes, Quality: {current_quality}%, Size: {working_image.size}")
+                    
+                    response = requests.post(
+                        url, 
+                        json=payload,
+                        headers={'Content-Type': 'application/json'},
+                        timeout=10
+                    )
+                    
+                    logger.debug(f"Response status: {response.status_code}")
+                    logger.debug(f"Response headers: {dict(response.headers)}")
+                    if response.text:
+                        logger.debug(f"Response body: {response.text[:200]}...")
+                    
+                    if response.status_code == 413:
+                        # Payload too large, try next attempt with smaller size/quality
+                        logger.warning(f"Attempt {attempt + 1}: Payload too large (413), trying smaller size/quality...")
+                        continue
+                    
+                    response.raise_for_status()
+                    logger.info(f"Successfully sent image to {url} (base64) - Quality: {current_quality}%, Size: {working_image.size}")
+                    return  # Success, exit the function
+                    
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code == 413 and attempt < max_attempts - 1:
+                        # Payload too large, try next attempt
+                        logger.warning(f"Attempt {attempt + 1}: Payload too large, trying smaller size/quality...")
+                        continue
+                    else:
+                        # Other HTTP error or final attempt
+                        raise e
+            
+            # If we get here, all attempts failed
+            raise Exception(f"Failed to send image after {max_attempts} attempts with different sizes")
             
         elif format_type == 'multipart':
-            # Send as multipart form data
+            # Send as multipart form data (usually more efficient for large images)
             buffer = BytesIO()
             image.save(buffer, format='JPEG', quality=self._config.get('quality', 85))
             buffer.seek(0)
@@ -419,12 +527,20 @@ class ScreenCaptureService:
                 'quality': str(self._config.get('quality', 85))
             }
             
+            logger.debug(f"Multipart data: {data}")
+            
             response = requests.post(
                 url,
                 files=files,
                 data=data,
                 timeout=10
             )
+            
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response headers: {dict(response.headers)}")
+            if response.text:
+                logger.debug(f"Response body: {response.text[:200]}...")
+            
             response.raise_for_status()
             logger.info(f"Successfully sent image to {url} (multipart)")
     
