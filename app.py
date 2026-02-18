@@ -34,6 +34,14 @@ def start_capture():
         data = request.get_json() or {}
         interval = data.get('interval', 1.0)
         quality = data.get('quality', 85)
+
+        if data:
+            config_ok = capture_service.update_config(data)
+            if not config_ok:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid configuration values'
+                }), 400
         
         success = capture_service.start_capture(interval=interval, quality=quality)
         

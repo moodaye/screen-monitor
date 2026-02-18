@@ -95,6 +95,23 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6 d-flex align-items-end">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="save-local" 
+                                       {% if config.save_local %}checked{% endif %}>
+                                <label class="form-check-label" for="save-local">
+                                    Save Locally
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="save-path" class="form-label">Local Folder</label>
+                            <input type="text" class="form-control" id="save-path" 
+                                   value="{{ config.save_path }}" placeholder="captures">
+                        </div>
+                    </div>
                     
                     <div class="d-flex gap-2 flex-wrap">
                         <button type="button" id="start-btn" class="btn btn-success" 

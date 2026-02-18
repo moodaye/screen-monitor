@@ -45,7 +45,11 @@ class ScreenCaptureService:
             'external_format': 'base64',  # 'base64' or 'multipart'
             'webhook_quality': 60,  # Quality for webhook images (lower than display quality)
             'webhook_max_width': 1280,  # Maximum width for webhook images
-            'webhook_max_height': 720   # Maximum height for webhook images
+            'webhook_max_height': 720,   # Maximum height for webhook images
+            'save_local': False,  # Save captures to local folder
+            'save_path': os.path.abspath('captures'),  # Folder path for local saves
+            'save_format': 'png',  # 'png' (lossless) or 'jpg'
+            'save_processed': False  # Save processed image instead of raw
         }
         
         # Check if screen capture is available
@@ -131,6 +135,24 @@ class ScreenCaptureService:
                     raise ValueError("Monitor index must be non-negative")
                 self._config['monitor'] = monitor
 
+            if 'save_local' in new_config:
+                self._config['save_local'] = bool(new_config['save_local'])
+
+            if 'save_path' in new_config:
+                save_path = str(new_config['save_path']).strip()
+                if not save_path:
+                    raise ValueError("Save path cannot be empty")
+                self._config['save_path'] = os.path.abspath(os.path.expanduser(save_path))
+
+            if 'save_format' in new_config:
+                save_format = str(new_config['save_format']).lower().strip()
+                if save_format not in ['png', 'jpg', 'jpeg']:
+                    raise ValueError("Save format must be 'png' or 'jpg'")
+                self._config['save_format'] = 'jpg' if save_format == 'jpeg' else save_format
+
+            if 'save_processed' in new_config:
+                self._config['save_processed'] = bool(new_config['save_processed'])
+
             logger.info(f"Configuration updated: {self._config}")
             return True
 
@@ -208,6 +230,10 @@ class ScreenCaptureService:
                     self._stats['total_captures'] += 1
                     
                     logger.debug(f"Captured image: {processed_image.size}")
+
+                    # Save to local folder if enabled
+                    if self._config.get('save_local', False):
+                        self._save_image(image, processed_image)
                     
                     # Send to external systems if configured
                     if self._config.get('send_to_external', False):
@@ -225,6 +251,30 @@ class ScreenCaptureService:
             time.sleep(self._config['interval'])
 
         logger.info("Capture loop ended")
+
+    def _save_image(self, raw_image, processed_image):
+        """Save captured image to local folder if enabled"""
+        try:
+            save_path = self._config.get('save_path', 'captures')
+            save_format = self._config.get('save_format', 'png')
+            use_processed = self._config.get('save_processed', False)
+
+            os.makedirs(save_path, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"capture_{timestamp}.{save_format}"
+            full_path = os.path.join(save_path, filename)
+
+            image_to_save = processed_image if use_processed else raw_image
+
+            if save_format == 'jpg':
+                quality = int(self._config.get('quality', 85))
+                image_to_save.save(full_path, format='JPEG', quality=quality)
+            else:
+                image_to_save.save(full_path, format='PNG')
+
+        except Exception as e:
+            logger.error(f"Failed to save image: {str(e)}")
 
     def _capture_screenshot(self):
         """Capture screenshot using available library"""

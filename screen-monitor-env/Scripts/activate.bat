@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=C:\Users\Rajiv\Documents\Playground\Replit-PokerGame-Components\screen-monitor\screen-monitor-env
+set VIRTUAL_ENV=C:\Users\rajiv\Documents\PokerProject\screen-monitor\screen-monitor-env
 
 if not defined PROMPT set PROMPT=$P$G
 

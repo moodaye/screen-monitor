@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\Rajiv\Documents\Playground\Replit-PokerGame-Components\screen-monitor\screen-monitor-env"
+VIRTUAL_ENV="C:\Users\rajiv\Documents\PokerProject\screen-monitor\screen-monitor-env"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"

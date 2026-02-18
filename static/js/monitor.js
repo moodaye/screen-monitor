@@ -212,7 +212,9 @@ class ScreenMonitor {
             interval: parseFloat(document.getElementById('interval').value),
             quality: parseInt(document.getElementById('quality').value),
             resize_factor: parseFloat(document.getElementById('resize-factor').value),
-            add_timestamp: document.getElementById('add-timestamp').checked
+            add_timestamp: document.getElementById('add-timestamp').checked,
+            save_local: document.getElementById('save-local').checked,
+            save_path: document.getElementById('save-path').value.trim()
         };
     }
     
@@ -220,6 +222,8 @@ class ScreenMonitor {
         const interval = parseFloat(document.getElementById('interval').value);
         const quality = parseInt(document.getElementById('quality').value);
         const resizeFactor = parseFloat(document.getElementById('resize-factor').value);
+        const saveLocal = document.getElementById('save-local').checked;
+        const savePath = document.getElementById('save-path').value.trim();
         
         let isValid = true;
         
@@ -235,6 +239,11 @@ class ScreenMonitor {
         
         // Validate resize factor
         if (resizeFactor <= 0 || resizeFactor > 2) {
+            isValid = false;
+        }
+
+        // Validate save path when local saving is enabled
+        if (saveLocal && !savePath) {
             isValid = false;
         }
         
